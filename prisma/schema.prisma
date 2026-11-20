@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// A provider = the trainer / cook / nanny. One account, one booking page.
+model Provider {
+  id                 String     @id @default(cuid())
+  name               String
+  slug               String     @unique // public booking URL: /book/[slug]
+  vertical           String     @default("trainer") // trainer | cook | nanny
+  unitLabel          String     @default("class") // "class" | "session" | "block" — cosmetic
+  reschedCutoffHours Int        @default(12)
+  cancelCutoffHours  Int        @default(12)
+  autoPublish        Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  slotTypes          SlotType[]
+  weeks              Week[]
+  clients            Client[]
+  slots              Slot[]
+}
+
+// A reusable session definition: "Leg day", 90 min, 6 seats.
+model SlotType {
+  id              String   @id @default(cuid())
+  providerId      String
+  provider        Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name            String
+  durationMin     Int
+  defaultCapacity Int
+  slots           Slot[]
+}
+
+// A calendar week the provider is planning. Drafts are invisible to clients.
+model Week {
+  id          String    @id @default(cuid())
+  providerId  String
+  provider    Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  startDate   DateTime // the Monday of this week, stored at local midnight
+  status      String    @default("draft") // draft | published
+  publishedAt DateTime?
+  slots       Slot[]
+
+  @@unique([providerId, startDate])
+}
+
+// One bookable occurrence: Tue 6am Strength, 8 seats.
+model Slot {
+  id         String     @id @default(cuid())
+  providerId String
+  provider   Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  weekId     String
+  week       Week       @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  slotTypeId String
+  slotType   SlotType   @relation(fields: [slotTypeId], references: [id])
+  startsAt   DateTime
+  capacity   Int
+  bookings   Booking[]
+}
+
+// A provider's roster entry. No account/password — identified by phone.
+model Client {
+  id         String    @id @default(cuid())
+  providerId String
+  provider   Provider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name       String
+  phone      String
+  bookings   Booking[]
+
+  @@unique([providerId, phone])
+}
+
+model Booking {
+  id        String   @id @default(cuid())
+  slotId    String
+  slot      Slot     @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  status    String   @default("booked") // booked | waitlisted | cancelled
+  createdAt DateTime @default(now())
+
+  @@unique([slotId, clientId])
+}
